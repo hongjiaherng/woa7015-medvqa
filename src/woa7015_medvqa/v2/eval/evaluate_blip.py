@@ -1,10 +1,8 @@
-from typing import Any, Dict, List
-
 import torch
 from rich.console import Console
 from torch.utils.data import DataLoader
 
-from ..eval.metrics import compute_open_metrics
+from .metrics import compute_text_metrics, split_indices_by_answer_type
 
 console = Console()
 
@@ -16,17 +14,26 @@ def evaluate_blip(
     loader: DataLoader,
     device: str,
     max_new_tokens: int = 10,
-    compute_bleu: bool = False,
-    compute_rougeL: bool = False,
-) -> Dict[str, Any]:
+    bertscore_model_type: str = "microsoft/deberta-xlarge-mnli",
+) -> dict[str, dict[str, float]]:
+    """
+    Returns:
+      {
+        "overall": {exact_match, token_f1},
+        "open": {exact_match, token_f1, bleu, rougeL, bertscore_f1},
+        "closed": {exact_match, token_f1},
+      }
+    """
     model.eval()
     model.to(device)
 
-    preds: List[str] = []
-    golds: List[str] = []
+    preds: list[str] = []
+    golds: list[str] = []
+    types: list[str] = []
 
     for batch in loader:
         golds.extend(batch["gold_answers"])
+        types.extend(batch["answer_types"])
 
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
@@ -44,14 +51,36 @@ def evaluate_blip(
         )
         preds.extend(pred_text)
 
-    metrics = compute_open_metrics(
-        preds,
-        golds,
-        compute_bleu=compute_bleu,
-        compute_rougeL=compute_rougeL,
+    # Overall (fast)
+    overall = compute_text_metrics(preds, golds)
+
+    # OPEN subset (full)
+    open_idx = split_indices_by_answer_type(types, "OPEN")
+    open_preds = [preds[i] for i in open_idx]
+    open_golds = [golds[i] for i in open_idx]
+
+    open_metrics = compute_text_metrics(
+        open_preds,
+        open_golds,
+        bleu=True,
+        rougeL=True,
+        bertscore=True,
+        bertscore_model_type=bertscore_model_type,
     )
 
-    console.print("[bold green]BLIP Test Evaluation[/bold green]")
-    console.print(metrics)
+    # CLOSED subset (fast)
+    closed_idx = split_indices_by_answer_type(types, "CLOSED")
+    closed_preds = [preds[i] for i in closed_idx]
+    closed_golds = [golds[i] for i in closed_idx]
+    closed_metrics = compute_text_metrics(closed_preds, closed_golds)
 
-    return metrics
+    results = {
+        "overall": overall,
+        "open": open_metrics,
+        "closed": closed_metrics,
+    }
+
+    console.print("[bold green]BLIP Test Evaluation[/bold green]")
+    console.print(results)
+
+    return results

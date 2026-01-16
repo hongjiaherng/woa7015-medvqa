@@ -57,9 +57,6 @@ def compute_text_metrics(
         "token_f1": float(np.mean(f1s)),
     }
 
-    if bleu or rougeL or bertscore:
-        raise ImportError("Optional metrics require: pip install evaluate")
-
     if bleu:
         bleu_metric = evaluate.load("bleu")
         res = bleu_metric.compute(predictions=preds, references=[[g] for g in golds])

@@ -18,21 +18,29 @@ def collate_fn_classify(batch: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def collate_fn_blip(
-    batch: list[dict[str, Any]], processor: BlipProcessor
-) -> dict[str, Any]:
+def collate_fn_blip(batch: list[dict[str, Any]], processor: BlipProcessor):
     images = [b["image"] for b in batch]
     questions = [b["question"] for b in batch]
     answers = [b["answer"] for b in batch]
     answer_types = [b["answer_type"] for b in batch]
 
-    inputs = processor(images=images, text=questions, padding=True, return_tensors="pt")
+    inputs = processor(
+        images=images,
+        text=questions,
+        padding=True,
+        return_tensors="pt",
+    )
 
-    labels = processor.tokenizer(answers, padding=True, return_tensors="pt").input_ids
+    target_tokens = processor.tokenizer(
+        answers,
+        padding=True,
+        truncation=True,
+        return_tensors="pt",
+    )
 
-    labels[labels == processor.tokenizer.pad_token_id] = -100
-    inputs["labels"] = labels
+    target_tokens[target_tokens == processor.tokenizer.pad_token_id] = -100
 
+    inputs["labels"] = target_tokens["input_ids"]
     inputs["answer_types"] = answer_types
     inputs["gold_answers"] = answers
 

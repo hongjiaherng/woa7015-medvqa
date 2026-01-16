@@ -4,19 +4,10 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 import torch.nn as nn
-from rich.console import Console
-from rich.progress import (
-    BarColumn,
-    Progress,
-    TextColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
+from tqdm import tqdm  # Replaced rich with tqdm
 from torch.utils.data import DataLoader
 
 from ..eval.metrics import compute_classification_metrics
-
-console = Console()
 
 
 @dataclass
@@ -117,7 +108,7 @@ def train_cnn_lstm(
     best_score: float | None = None
     os.makedirs(cfg.ckpt_dir, exist_ok=True)
 
-    console.print(f"[bold green]Training CNN–LSTM ({cfg.epochs} epochs)[/bold green]")
+    print(f"Training CNN-LSTM ({cfg.epochs} epochs)")
 
     for epoch in range(cfg.epochs):
         model.train()
@@ -128,40 +119,32 @@ def train_cnn_lstm(
         all_pred: list[int] = []
         all_gold: list[int] = []
 
-        progress = Progress(
-            TextColumn(f"[bold]Epoch {epoch + 1}/{cfg.epochs}[/bold]"),
-            BarColumn(),
-            TextColumn("{task.completed}/{task.total}"),
-            TimeElapsedColumn(),
-            TimeRemainingColumn(),
-            console=console,
-        )
+        # Replaced rich.Progress with tqdm
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{cfg.epochs}")
 
-        with progress:
-            task = progress.add_task("train", total=len(train_loader))
+        for batch in pbar:
+            images = batch["images"].to(cfg.device)
+            questions = batch["questions"].to(cfg.device)
+            labels = batch["labels"].to(cfg.device)
 
-            for batch in train_loader:
-                images = batch["images"].to(cfg.device)
-                questions = batch["questions"].to(cfg.device)
-                labels = batch["labels"].to(cfg.device)
+            logits = model(images, questions)
+            loss = criterion(logits, labels)
 
-                logits = model(images, questions)
-                loss = criterion(logits, labels)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+            preds = logits.argmax(dim=1)
 
-                preds = logits.argmax(dim=1)
+            bs = labels.size(0)
+            total += bs
+            running_loss += loss.item() * bs
 
-                bs = labels.size(0)
-                total += bs
-                running_loss += loss.item() * bs
+            all_pred.extend(preds.detach().cpu().tolist())
+            all_gold.extend(labels.detach().cpu().tolist())
 
-                all_pred.extend(preds.detach().cpu().tolist())
-                all_gold.extend(labels.detach().cpu().tolist())
-
-                progress.update(task, advance=1)
+            # Optional: Updates the progress bar with the current batch loss
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
         train_loss = running_loss / max(total, 1)
         train_acc = float(np.mean(np.asarray(all_pred) == np.asarray(all_gold)))
@@ -175,8 +158,9 @@ def train_cnn_lstm(
         history["val_loss"].append(val_metrics["loss"])
         history["val_accuracy"].append(val_metrics["accuracy"])
 
-        console.print(
-            f"[cyan]Epoch {epoch + 1}[/cyan] | "
+        # Replaced rich console.print with standard print
+        print(
+            f"Epoch {epoch + 1} | "
             f"TrainLoss={train_loss:.4f} TrainAcc={train_acc:.4f} | "
             f"ValLoss={val_metrics['loss']:.4f} ValAcc={val_metrics['accuracy']:.4f}"
         )
@@ -197,9 +181,7 @@ def train_cnn_lstm(
             _save_checkpoint(
                 os.path.join(cfg.ckpt_dir, "best.pt"), model, optimizer, epoch, history
             )
-            console.print(
-                f"[bold yellow]✅ Best updated: {cfg.best_metric}={best_score:.4f}[/bold yellow]"
-            )
+            print(f"-> Best updated: {cfg.best_metric}={best_score:.4f}")
 
-    console.print("[bold green]Done CNN–LSTM training![/bold green]")
+    print("Done CNN-LSTM training!")
     return history

@@ -1,12 +1,10 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from rich.console import Console
 from torch.utils.data import DataLoader
+from tqdm import tqdm  # Replaced rich with tqdm
 
 from .metrics import compute_classification_metrics, split_indices_by_answer_type
-
-console = Console()
 
 
 @torch.no_grad()
@@ -36,7 +34,10 @@ def evaluate_cnn_lstm(
     total_loss = 0.0
     total = 0
 
-    for batch in loader:
+    # Using tqdm for progress tracking
+    pbar = tqdm(loader, desc="Evaluating CNN-LSTM")
+
+    for batch in pbar:
         images = batch["images"].to(device)
         questions = batch["questions"].to(device)
         labels = batch["labels"].to(device)
@@ -100,7 +101,12 @@ def evaluate_cnn_lstm(
         "closed": closed_m,
     }
 
-    console.print("[bold green]CNN–LSTM Test Evaluation[/bold green]")
-    console.print(results)
+    # Replaced console.print with standard print
+    print("CNN-LSTM Test Evaluation Results:")
+    # Using a simple loop to print clearly since we lost rich's pretty printing
+    for category, metrics in results.items():
+        print(f"[{category.upper()}]")
+        for k, v in metrics.items():
+            print(f"  {k}: {v:.4f}")
 
     return results

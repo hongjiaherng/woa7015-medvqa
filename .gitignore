@@ -13,5 +13,6 @@ data/*
 !data/README.md
 
 *.pt
+*.pth
 *.docx
 *.mp4
